@@ -6,5 +6,7 @@
     "battery_voltage" :"0",
     "digital_in" :"0",
     "health" :"available",
-    "previous_settime" : "0"
+    "previous_settime" : "0",
+    "upload_state" : false,
+    "status" : false
 }

@@ -23,7 +23,7 @@
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-var DEBUG = true;
+var DEBUG = false;
 var GPIO_ON = true;
 var DEVELOPMENT = false;
 
@@ -33,7 +33,7 @@ var DEVELOPMENT = false;
 var SERIAL_RX_PACKET_SIZE_MIN = 63;  //for samp monitor
 var SERIAL_RX_PACKET_SIZE_MAX = 70;  //for samp monitor
 
-//FOR RX DATA CHECH
+//FOR RX DATA CHECK
 //var DATA_SIZE_MAX_TIMESTAMP = 7;
 var DATA_SIZE_LQI = 3;
 //var DATA_SIZE_COUNTER = 5;
@@ -53,10 +53,12 @@ var BATTERY_WARNING_LEVEL = 0xA28; // 2.6V
 var BATTERY_LOGGING_INTERVAL = 6; // hour.
 
 var SENSOR_HOLDING_TIME =1; //min
-//var SENSOR_HOLDING_TIME =1; //min
 var SENSOR_NUM =2;
 
 var SENSOR_HEALTH_INTERVAL_TIME =60; //sec
+var SENSOR_ERROR_RECOVERY_INTERVAL = 3; // sec.
+var SENSOR_ERROR_RECOVERY_TIME = 3; // times.
+var SENSOR_STATE_SEND_INTERVAL = 30; // sec.
 
 //for Syuzai 20160417
 
@@ -265,7 +267,11 @@ var jsonParent = require(conf.filePathToParent);
                                             }
                                             //send state change to the server
                                             //pushDataToServer(jsonStoreInfo.parent_id,intDigitalValue,(senser_number+1));
-                                            pushDataToServer(jsonDevices.parent_id,intDigitalValue,jsonDevices.children[senser_number].serial_id) ;
+
+                                            pushDataToServer(jsonDevices,senser_number) ;
+
+                                            if(!jsonDevices.children[senser_number].upload_status)
+                                                sensorApiErrorRecoveryProcessActivity(jsonDevices, senser_number);
 
                                             sensorValues['previous_settime'] =formatted;
                                             //previousSetTime[senser_number]=formatted;
@@ -298,7 +304,7 @@ var jsonParent = require(conf.filePathToParent);
                                         myDigitalPins[senser_number].write(intDigitalValue);
                                     }
                                     //send state change to the server
-                                    pushDataToServer(jsonDevices.parent_id,intDigitalValue,(senser_number+1)) ;
+                                    pushDataToServer(jsonDevices, senser_number);
                                     }
 //                                }else{
 //                                    console.log('digitalInValue is not changed , now ' + digitalInValue);
@@ -394,14 +400,19 @@ var jsonParent = require(conf.filePathToParent);
 	//var logFileName = '/home/root/.node_app_slot/log/jinkanLog_'+openDt.toFormat("YYYYMMDD_HH24_MI_SS");
 	var logFileName = '/home/root/.node_app_slot/log/BatteryLog';
 	var errorLogFileName = '/home/root/.node_app_slot/log/ErrorLog';
-  	fs.writeFile(logFileName, "--------- log ---------\n",function(err) {console.log(err)}  );
+  	//fs.writeFile(logFileName, "--------- log ---------\n",function(err) {console.log(err)}  );
 
     var openDt = new Date();
     curTime = openDt.toFormat("YYYYMMDDHH24MISS");
     startMessage = "<"+curTime+"> APPLICATION START ";
+    storeBatteryLog(startMessage);
     storeErrorLog(startMessage);
 
-var pushDataToServer = function pushDataToServer (store_id, status, seat_id) {
+var pushDataToServer = function pushDataToServer (jsonDevices, sensorNum) {
+
+    store_id = jsonDevices.parent_id;
+    status = jsonDevices.children[sensorNum].digital_in;
+    seat_id =  jsonDevices.children[sensorNum].serial_id;
 
     if( (status!=1)&&(status!=0)){
   		console.log('Send data to server, failed status (' +status + ') is not defined ' ); //write the read value out to the console
@@ -484,9 +495,11 @@ var pushDataToServer = function pushDataToServer (store_id, status, seat_id) {
                 debugConsoleLog('Send data to server, childId=' + seat_id+ ' status=' + statusName); //write the read value out to the console
 //                console.log('     Time is ' + dt.toFormat("YYYY MM DD HH24 MI:SS")); //the read value out to the console
                 if(JSON.parse(body).ok){
-                    console.log('>>>>>>>>> RECEIVED DATA TRUE');
+                    console.log('>>>>>>>>> RECEIVED DATA TRUE sensor '+sensorNum);
+                    jsonDevices.children[sensorNum].upload_status=true;
                 }else{
                     console.log('>>>>>>>>> RECEIVED DATA FALSE');
+                    jsonDevices.children[sensorNum].upload_status=false;
                     if(JSON.parse(body).errors){
                         debugConsoleLog('>>>>>>>>> FALSE MESSAGE ' + JSON.parse(body).errors[0].message);
                         debugConsoleLog('>>>>>>>>> FALSE PARAM   ' + JSON.parse(body).errors[0].param);
@@ -502,10 +515,10 @@ var pushDataToServer = function pushDataToServer (store_id, status, seat_id) {
                     console.log('>>>>>>>>> RESPONSE DATA STATUS TIMEOUT : '+response);
                     setErrorIndicate(0x04, "sensor " + seat_id +" "+response);
                 }
+                jsonDevices.children[sensorNum].upload_status=false;
             }
         });
         debugConsoleLog('>>>>>>>>> END OF NETWOTK DATA');
-
     }
 }
 
@@ -570,8 +583,8 @@ function storeJson () {
     fs.writeFileSync(conf.filePathToChild,JSON.stringify(jsonChild,null," "))
 }
 
-function storeLog (message) {
-    //debugConsoleLog('================== storeLog ');
+function storeBatteryLog (message) {
+    //debugConsoleLog('================== storeBatteryLog ');
  	fs.appendFile(logFileName, message+"\n",function(err) {console.log(err)}  );
 }
 
@@ -644,10 +657,9 @@ function setSerialNum(){
 
 }
 
-//pushDataToServer(23949,0,1);
-//pushDataToServer(23949,0,2);
 periodicActivity(); //call the periodicActivity function
 periodicHealthSenderActivity();
+periodicSensorStateSenderActivity();
 var loggingBatteryCnt = 10;
 
 function periodicActivity() {
@@ -661,7 +673,7 @@ function periodicActivity() {
     var numOfSensors = Object.keys(jsonDevices.children).length;
     var sensorNum=0;
     for(var i = 0; i < numOfSensors ; i++){
-//
+
         sensorNum=i;
 
         var sensorValues = jsonDevices.children[sensorNum];
@@ -670,9 +682,7 @@ function periodicActivity() {
         // Sensor On timer
         ///////////////
 
-//        debugConsoleLog('================== periodic : sensor ' + sensorNum + ' ' + formatted + ' > ' + (previousSetTime[sensorNum]+holdingTime*100) ) ;
         debugConsoleLog('================== periodic : sensor ' + sensorNum + ' current ' + formatted + ' : timeout ' + (parseInt(sensorValues.previous_settime, 10)+holdingTime*100) ) ;
-
 
 
         if( (+formatted > ( parseInt(sensorValues.previous_settime, 10)+holdingTime*100)) && (sensorValues.digital_in == 1 ) ){
@@ -686,13 +696,20 @@ function periodicActivity() {
                 }
             }
             //send state change to the server
-            //pushDataToServer(jsonStoreInfo.parent_id,0,sensorNum+1) ;
-            pushDataToServer(jsonDevices.parent_id,0,jsonDevices.children[sensorNum].serial_id) ;
+            pushDataToServer(jsonDevices, sensorNum) ;
+
+            if(!jsonDevices.children[sensorNum].upload_status)
+                sensorApiErrorRecoveryProcessActivity(jsonDevices, sensorNum);
 
             //previousSetTime[sensorNum]=0;
             sensorValues.previous_settime="0";
         }
     }
+
+    ///////////////
+    // Flush Json file
+    ///////////////
+    storeJson();
 
     ///////////////
     // Battery Log
@@ -708,7 +725,7 @@ function periodicActivity() {
             message+= ':';
         }
         debugConsoleLog( message );
-        storeLog(message);
+        storeBatteryLog(message);
         previousPowerLoggintTime = formatted;
     }
     setTimeout (periodicActivity,2000); //call the indicated function after 1 second (1000 milliseconds)
@@ -774,9 +791,13 @@ function periodicHealthSenderActivity() {
 
         var sensorValues = jsonDevices.children[sensorNum];
 
-         ///////////////
-        // Sensor On timer
         ///////////////
+        //CHECK THE SENSOR HEALTH
+        ///////////////
+        // check the connection
+
+        // check the battery level
+
 
         jsonDevices.children[sensorNum].status="available" //temporal
 
@@ -796,13 +817,74 @@ function periodicHealthSenderActivity() {
         // 次の回の実行予約
         setTimeout(function(){
             loop();
-        }, 1000);
+        }, SENSOR_HEALTH_INTERVAL_TIME*1000);
 
     }
 
-
     setTimeout (periodicHealthSenderActivity,SENSOR_HEALTH_INTERVAL_TIME*1000); //call the indicated function after 1 second (1000 milliseconds)
     //setTimeout (periodicHealthSenderActivity,600000); //call the indicated function after 1 second (1000 milliseconds)
+}
+
+function periodicSensorStateSenderActivity() {
+
+    console.log('================== state sendor');
+
+    var openDt = new Date();
+    var formatted = openDt.toFormat("YYYYMMDDHH24MISS");
+
+    // get the sensorNum of serial CONT_VAL_ID
+    var numOfSensors = Object.keys(jsonDevices.children).length;
+    var sensorNum=0;
+
+    for(var i = 0; i < numOfSensors ; i++){
+
+        sensorNum=i;
+
+        var sensorValues = jsonDevices.children[sensorNum];
+
+         ///////////////
+        // Sensor On timer
+        ///////////////
+
+        //console.log('================== state sendor : sensor ' + jsonDevices.children[sensorNum].serial_id.toString() + ' state ' + jsonDevices.digital_in + ' sensor ' + sensorNum  ) ;
+
+        if(!jsonDevices.children[sensorNum].upload_status){
+//            pushDataToServer(jsonDevices.parent_id,jsonDevices.children[sensorNum].digital_in ,jsonDevices.children[sensorNum].serial_id)
+            console.log('================== state sendor : sensor ' +sensorNum+' resend the data' );
+            pushDataToServer(jsonDevices,sensorNum);
+        }else{
+            console.log('================== state sendor : sensor ' +sensorNum+' ok' );
+        }
+    }
+
+    setTimeout (periodicSensorStateSenderActivity,SENSOR_STATE_SEND_INTERVAL*1000);
+}
+
+function sensorApiErrorRecoveryProcessActivity(jsonDevice, sensorNum) {
+
+    console.log('================== sensorApiErrorRecoveryProcess');
+
+    var openDt = new Date();
+    var formatted = openDt.toFormat("YYYYMMDDHH24MISS");
+
+    // パラメータ
+    counter = 0;
+    // 実処理の実行
+    loop();
+
+    function loop() {
+        pushDataToServer(jsonDevice,sensorNum);
+
+        if((jsonDevice.children[sensorNum].upload_status!=true)
+           && ( counter < SENSOR_ERROR_RECOVERY_TIME )){
+            counter++;
+            // 次の回の実行予約
+            setTimeout(function(){
+                loop();
+            }, SENSOR_ERROR_RECOVERY_INTERVAL*1000);
+        }
+    }
+
 }
 
 function setErrorIndicateGPIO(state){
