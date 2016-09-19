@@ -1,0 +1,13 @@
+#/lib/systemd/system/throne_refresh.timer
+
+[Unit]
+Description=Throne reflesh per day Service
+
+[Timer]
+OnBootSec=4h         
+OnUnitActiveSec=4h
+#OnBootSec=23h 30min
+#OnBootSec=23h 30min
+#OnCalendar=*-*-* 02:10:00
+[Install]
+WantedBy=timers.target

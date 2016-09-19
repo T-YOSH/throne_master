@@ -1,0 +1,10 @@
+{
+    "timestamp" : "0",
+    "lqi" :"0",
+    "counter" :"0",
+    "serial_id" :"0",
+    "battery_voltage" :"0",
+    "digital_in" :"0",
+    "health" :"available",
+    "previous_settime" : "0"
+}

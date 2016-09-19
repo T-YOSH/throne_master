@@ -1,0 +1,13 @@
+#/lib/systemd/system/sensordetect.service
+
+[Unit]
+Description=Sensor Detect Service
+After=network.target
+
+[Service]
+ExecStartPre=/bin/busybox udhcpc -i wlan0
+ExecStart=/usr/bin/node /home/root/.node_app_slot/main.js &
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

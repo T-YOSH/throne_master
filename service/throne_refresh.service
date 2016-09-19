@@ -1,0 +1,13 @@
+#/lib/systemd/system/throne_refresh.timer
+
+[Unit]
+Description= throne refresh
+RefuseManualStart=no
+RefuseManualStop=yes
+
+[Service]
+Type=simple
+ExecStart=/bin/sh /home/root/.node_app_slot/service/reboot.sh
+
+[Install]
+WantedBy=default.target

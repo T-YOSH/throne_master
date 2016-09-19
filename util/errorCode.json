@@ -1,0 +1,12 @@
+{
+    "Error" :[
+        "sensor_api_network_offline" : 0x01,
+        "sensor_api_network_response_error" : 0x02,
+        "sensor_api_network_timeout" : 0x04,
+        "health_api_network_offline" : 0x11,
+        "health_api_network_response_error" : 0x12,
+        "health_api_network_timeout" : 0x14,
+        "battery" : 0x31,
+        "child_problem" : 0x41
+    ]
+}
