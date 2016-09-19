@@ -23,7 +23,7 @@
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-var DEBUG = false;
+var DEBUG = true;
 var GPIO_ON = true;
 var DEVELOPMENT = false;
 
@@ -32,7 +32,14 @@ var DEVELOPMENT = false;
 
 var SERIAL_RX_PACKET_SIZE_MIN = 63;  //for samp monitor
 var SERIAL_RX_PACKET_SIZE_MAX = 70;  //for samp monitor
-var SERIAL_NO_DATA_SIZE = 7;
+
+//FOR RX DATA CHECH
+//var DATA_SIZE_MAX_TIMESTAMP = 7;
+var DATA_SIZE_LQI = 3;
+//var DATA_SIZE_COUNTER = 5;
+var DATA_SIZE_SERIAL_NO = 7;
+var DATA_SIZE_BATTERY_VOLTAGE = 4;
+var DATA_SIZE_DIGITAL_IN = 4;
 
 // **** samp monitor **** //
 //RXパケットビットマップ
@@ -164,7 +171,7 @@ var jsonParent = require(conf.filePathToParent);
                         ///////////////
                         // check the rx data content
                         ///////////////
-                        //debugConsoleLog('CHECK data.length = ' + data.length +" (max " + SERIAL_RX_PACKET_SIZE_MAX+")");
+                        debugConsoleLog('CHECK data.length = ' + data.length +" (max " + SERIAL_RX_PACKET_SIZE_MAX+")");
 
                         if( !(data.length > SERIAL_RX_PACKET_SIZE_MIN) || !(data.length <= SERIAL_RX_PACKET_SIZE_MAX)  ){
                             //debugConsoleLog.log('RX data size is ' + data.length);
@@ -192,7 +199,7 @@ var jsonParent = require(conf.filePathToParent);
                             var sensorValues = jsonDevices.children[i];
                             //debugConsoleLog("JUDGE child "+ i+ " "+ String (sensorValues.serial_id) +"==" +String(serial_id))
                             if( (String (sensorValues.serial_id) == String(serial_id))
-                                && ( serial_id.length == SERIAL_NO_DATA_SIZE )
+                                && ( serial_id.length == DATA_SIZE_SERIAL_NO )
                               ){
                                 serial_id_found=true;
                                 senser_number=i;
@@ -354,14 +361,28 @@ var jsonParent = require(conf.filePathToParent);
 //                            jsonChild["battery_voltage"] = parseData[6];
 //                            jsonChild["digital_in"] = parseData[12];
 
-                            console.log('############# data.serial_id (' +data.serial_id + ' data.serial_id.length=' + data.serial_id.length)
+                            debugConsoleLog('############# data.lqi (' +data.lqi + ' data.serial_id.length=' + data.lqi.length)
+                            debugConsoleLog('############# data.serial_id (' +data.serial_id + ' data.serial_id.length=' + data.serial_id.length)
+                            debugConsoleLog('############# data.battery_voltage (' +data.battery_voltage + ' data.battery_voltage.length=' + data.battery_voltage.length)
+                            debugConsoleLog('############# data.digital_in (' +data.digital_in + ' data.battery_voltage.length=' + data.digital_in.length)
 
-                            if(data.serial_id.length==SERIAL_NO_DATA_SIZE){
+                            //DATA CHECK
+                            if(
+                                (data.serial_id.length==DATA_SIZE_SERIAL_NO)
+                                &&(data.lqi.length==DATA_SIZE_LQI)
+                                &&(data.battery_voltage.length==DATA_SIZE_BATTERY_VOLTAGE)
+                                &&(data.digital_in.length==DATA_SIZE_DIGITAL_IN)
+                            ){
 //                                jsonDevices.children.push(jsonChild);
                                 jsonDevices.children.push(data);
 //                                jsonDevices["sensor_"+ (numOfSensors+1) ] = data;
                                 storeJson();
                                 console.log('create ' + "sensor_"+ (numOfSensors+1) );
+                            }else{
+                                var openDt = new Date();
+                                curTime = openDt.toFormat("YYYYMMDDHH24MISS");
+                                startMessage = "<"+curTime+"> INVALID PACKET RECEIVED ("+ data+")";
+                                storeErrorLog(startMessage);
                             }
 
                         }
@@ -765,7 +786,7 @@ function periodicHealthSenderActivity() {
         debugConsoleLog('==================   health : battery_voltage    ' + jsonDevices.children[sensorNum].battery_voltage ) ;
         debugConsoleLog('==================   health : status             ' + jsonDevices.children[sensorNum].status ) ;
 
-        if(jsonDevices.children[sensorNum].serial_id.length==SERIAL_NO_DATA_SIZE){
+        if(jsonDevices.children[sensorNum].serial_id.length==DATA_SIZE_SERIAL_NO){
             pushHealthToServer(jsonDevices.parent_id,
                            jsonDevices.children[sensorNum].serial_id,
                            jsonDevices.children[sensorNum].battery_voltage,
