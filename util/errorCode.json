@@ -1,12 +1,23 @@
 {
     "Error" :[
-        "sensor_api_network_offline" : 0x01,
-        "sensor_api_network_response_error" : 0x02,
-        "sensor_api_network_timeout" : 0x04,
-        "health_api_network_offline" : 0x11,
-        "health_api_network_response_error" : 0x12,
-        "health_api_network_timeout" : 0x14,
-        "battery" : 0x31,
-        "child_problem" : 0x41
+        {
+        "sensor_api_network_offline" : 1,
+        "sensor_api_network_response_error" : 2,
+        "sensor_api_network_timeout" : 4,
+        "health_api_network_offline" : 17,
+        "health_api_network_response_error" : 18,
+        "health_api_network_timeout" : 20,
+        "battery" : 49,
+        "child_problem" : 65
+        }
+    ],
+    "DeviceState" :[
+        {
+        "device_battery" : 16,
+        "device_lqi" : 32,
+        "ok" : 0,
+        "warning" : 1,
+        "error" : 2
+        }
     ]
 }

@@ -3,14 +3,16 @@
         "url": "http://xig.gilpa.org:3000/api/v1/throne/update/status",
         "filePathToDevices": "/home/root/.node_app_slot/info/devices.json",
         "filePathToParent": "/home/root/.node_app_slot/info/parent.json",
-        "filePathToChild": "/home/root/.node_app_slot/info/child.json"
+        "filePathToChild": "/home/root/.node_app_slot/info/child.json",
+        "filePathToErrorCode": "/home/root/.node_app_slot/util/errorCode.json"
     },
     "production": {
         "url": "https://api.throneservice.com/v1/vacancy",
         "url": "https://api.vacanservice.com/v1/vacancy",
         "health_url": "https://api.vacanservice.com/v1/health",
-        "filePathToDevices": "/home/root/.node_app_slot/info/devices.json",
-        "filePathToParent": "/home/root/.node_app_slot/info/parent.json",
-        "filePathToChild": "/home/root/.node_app_slot/info/child.json"
+        "filePathToDevices":    "/home/root/.node_app_slot/info/devices.json",
+        "filePathToParent":     "/home/root/.node_app_slot/info/parent.json",
+        "filePathToChild":      "/home/root/.node_app_slot/info/child.json",
+        "filePathToErrorCode":  "/home/root/.node_app_slot/util/errorCode.json"
     }
 }

@@ -50,11 +50,13 @@ var DATA_SIZE_DIGITAL_IN = 4;
 // **** samp monitor end **** //
 
 var BATTERY_WARNING_LEVEL = 0xA28; // 2.6V
+var LQI_WARNING_LEVEL = 0x10; // temporal
 var BATTERY_LOGGING_INTERVAL = 6; // hour.
 
 var SENSOR_HOLDING_TIME =1; //min
 var SENSOR_NUM =2;
 
+var API_CONTINUE_INTERVAL_TIME =1; //sec
 var SENSOR_HEALTH_INTERVAL_TIME =60; //sec
 var SENSOR_ERROR_RECOVERY_INTERVAL = 3; // sec.
 var SENSOR_ERROR_RECOVERY_TIME = 3; // times.
@@ -94,6 +96,8 @@ if(DEVELOPMENT){
 var jsonDevices = require(conf.filePathToDevices);
 var jsonChild = require(conf.filePathToChild);
 var jsonParent = require(conf.filePathToParent);
+var jsonErrorCode = require(conf.filePathToErrorCode);
+
 //var jsonStoreInfo = require(conf.filePathToStoreInfo);
 
 	console.log('MRAA Version: ' + m.getVersion()); //write the mraa version to the console
@@ -744,7 +748,7 @@ getIP()
 
 function periodicHealthSenderActivity() {
 
-    debugConsoleLogWithName('HEALTH SENDOR','START');
+    debugConsoleLogWithName('HEALTH SENDOR ','START');
     //debugConsoleLogWithName('HEALTH SENDOR','IP   ' + getIP;
 
     var openDt = new Date();
@@ -753,38 +757,20 @@ function periodicHealthSenderActivity() {
     // get the sensorNum of serial CONT_VAL_ID
     var numOfSensors = Object.keys(jsonDevices.children).length;
     var sensorNum=0;
-//    for(var i = 0; i < numOfSensors ; i++){
-////
-//        sensorNum=i;
-//
-//        var sensorValues = jsonDevices.children[sensorNum];
-//
-//         ///////////////
-//        // Sensor On timer
-//        ///////////////
-//
-//        jsonDevices.children[sensorNum].status="available" //temporal
-//
-//        debugConsoleLog('================== periodic : sensor' + sensorNum + "health info") ;
-//        debugConsoleLog('==================   health : pareint            ' + jsonDevices.parent_id ) ;
-//        debugConsoleLog('==================   health : serial_id            ' + jsonDevices.children[sensorNum].serial_id ) ;
-//        debugConsoleLog('==================   health : battery_voltage    ' + jsonDevices.children[sensorNum].battery_voltage ) ;
-//        debugConsoleLog('==================   health : status             ' + jsonDevices.children[sensorNum].status ) ;
-//
-//        pushHealthToServer(jsonDevices.parent_id,
-//                           jsonDevices.children[sensorNum].serial_id,
-//                           jsonDevices.children[sensorNum].battery_voltage,
-//                           jsonDevices.children[sensorNum].status)
-//    }
 
     // パラメータ
-    counter = 0;
+    var counter = 0;
     // 実処理の実行
     loop();
 
     function loop() {
         // 目的のカウント数実行したら終了
-        if(counter==numOfSensors) return;
+        if(counter==numOfSensors){
+            console.log('*-*-*-*-*-*-HEALTH SENDOR ','END');
+            return;
+        }
+
+        var sensorState = 0x00;
 
         //TODO: 何かの処理
         sensorNum=counter;
@@ -795,30 +781,45 @@ function periodicHealthSenderActivity() {
         //CHECK THE SENSOR HEALTH
         ///////////////
         // check the connection
+        //lqi を確認する。
+        if(sensorValues.lqi < LQI_WARNING_LEVEL){
+            sensorState+=jsonErrorCode.DeviceState.device_lqi;
+            sensorState+=jsonErrorCode.DeviceState.warning;
+        }
 
         // check the battery level
+        //battery_voltage　を確認する
+        if(sensorValues.battery_voltage<BATTERY_WARNING_LEVEL){
+            sensorState+=jsonErrorCode.DeviceState.device_battery;
+            sensorState+=jsonErrorCode.DeviceState.warning;
+        }
 
-
-        jsonDevices.children[sensorNum].status="available" //temporal
+        if(sensorState==0x00){
+            jsonDevices.children[sensorNum].status="available" ;
+        }else{
+            jsonDevices.children[sensorNum].status="unavailable";
+        }
 
         debugConsoleLog('================== periodic : sensor' + sensorNum + "health info") ;
-        debugConsoleLog('==================   health : pareint            ' + jsonDevices.parent_id ) ;
+        debugConsoleLog('==================   health : pareint              ' + jsonDevices.parent_id ) ;
         debugConsoleLog('==================   health : serial_id            ' + jsonDevices.children[sensorNum].serial_id ) ;
-        debugConsoleLog('==================   health : battery_voltage    ' + jsonDevices.children[sensorNum].battery_voltage ) ;
-        debugConsoleLog('==================   health : status             ' + jsonDevices.children[sensorNum].status ) ;
+        debugConsoleLog('==================   health : lqi                  ' + jsonDevices.children[sensorNum].lqi ) ;
+        debugConsoleLog('==================   health : battery_voltage      ' + jsonDevices.children[sensorNum].battery_voltage ) ;
+        debugConsoleLog('==================   health : status               ' + jsonDevices.children[sensorNum].status ) ;
 
         if(jsonDevices.children[sensorNum].serial_id.length==DATA_SIZE_SERIAL_NO){
             pushHealthToServer(jsonDevices.parent_id,
                            jsonDevices.children[sensorNum].serial_id,
                            jsonDevices.children[sensorNum].battery_voltage,
                            jsonDevices.children[sensorNum].status)
+        }else{
+            console.log('*-*-*-*-*-*-HEALTH SENDOR sensor ' + sensorNum,'SERIAL ERROR');
         }
         counter++;
         // 次の回の実行予約
         setTimeout(function(){
             loop();
-        }, SENSOR_HEALTH_INTERVAL_TIME*1000);
-
+        }, API_CONTINUE_INTERVAL_TIME*1000);
     }
 
     setTimeout (periodicHealthSenderActivity,SENSOR_HEALTH_INTERVAL_TIME*1000); //call the indicated function after 1 second (1000 milliseconds)
@@ -836,9 +837,26 @@ function periodicSensorStateSenderActivity() {
     var numOfSensors = Object.keys(jsonDevices.children).length;
     var sensorNum=0;
 
-    for(var i = 0; i < numOfSensors ; i++){
+//    for(var i = 0; i < numOfSensors ; i++){
+//
+//        sensorNum=i;
+//
+//    }
 
-        sensorNum=i;
+    // パラメータ
+    var counter = 0;
+    // 実処理の実行
+    loop();
+
+    function loop() {
+        // 目的のカウント数実行したら終了
+        if(counter==numOfSensors){
+            //console.log('*-*-*-*-*-*-STATE SENDOR ','END');
+            return;
+        }
+
+        //TODO: 何かの処理
+        sensorNum=counter;
 
         var sensorValues = jsonDevices.children[sensorNum];
 
@@ -849,13 +867,21 @@ function periodicSensorStateSenderActivity() {
         //console.log('================== state sendor : sensor ' + jsonDevices.children[sensorNum].serial_id.toString() + ' state ' + jsonDevices.digital_in + ' sensor ' + sensorNum  ) ;
 
         if(!jsonDevices.children[sensorNum].upload_status){
-//            pushDataToServer(jsonDevices.parent_id,jsonDevices.children[sensorNum].digital_in ,jsonDevices.children[sensorNum].serial_id)
+            //            pushDataToServer(jsonDevices.parent_id,jsonDevices.children[sensorNum].digital_in ,jsonDevices.children[sensorNum].serial_id)
             console.log('================== state sendor : sensor ' +sensorNum+' resend the data' );
             pushDataToServer(jsonDevices,sensorNum);
         }else{
             console.log('================== state sendor : sensor ' +sensorNum+' ok' );
         }
+
+        counter++;
+        // 次の回の実行予約
+        setTimeout(function(){
+            loop();
+        }, API_CONTINUE_INTERVAL_TIME*1000);
     }
+
+
 
     setTimeout (periodicSensorStateSenderActivity,SENSOR_STATE_SEND_INTERVAL*1000);
 }
