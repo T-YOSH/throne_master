@@ -30,8 +30,8 @@ var DEVELOPMENT = false;
 //var SERIAL_RX_PACKET_SIZE = 51; // for basic applli
 //var SERIAL_NO_DATA_SIZE = 8;// for basic applli
 
-var SERIAL_RX_PACKET_SIZE_MIN = 63;  //for samp monitor
-var SERIAL_RX_PACKET_SIZE_MAX = 70;  //for samp monitor
+var SERIAL_RX_PACKET_SIZE_MIN = 58;  //for samp monitor
+var SERIAL_RX_PACKET_SIZE_MAX = 71;  //for samp monitor
 
 //FOR RX DATA CHECK
 //var DATA_SIZE_MAX_TIMESTAMP = 7;
@@ -61,6 +61,11 @@ var SENSOR_HEALTH_INTERVAL_TIME =60; //sec
 var SENSOR_ERROR_RECOVERY_INTERVAL = 3; // sec.
 var SENSOR_ERROR_RECOVERY_TIME = 3; // times.
 var SENSOR_STATE_SEND_INTERVAL = 30; // sec.
+
+//for Analog sensor
+var LEADSWITH_THRESHOLD_VOLTAGE = 1200;
+var LEADSWITH_IN_USE  = "0000"; // lower LEADSWITH_THRESHOLD_VOLTAGE
+var LEADSWITH_VACANCY = "0001"; // higher LEADSWITH_THRESHOLD_VOLTAGE
 
 //for Syuzai 20160417
 
@@ -173,6 +178,7 @@ var jsonErrorCode = require(conf.filePathToErrorCode);
                         if(data.length>11){
                             debugConsoleLog('RX ' + data);
                         }
+                        console.log('RX ' + data);
 
                         ///////////////
                         // check the rx data content
@@ -193,6 +199,9 @@ var jsonErrorCode = require(conf.filePathToErrorCode);
                         var serial_id = parseData[5];
                         // -> when with the samp mopnitor
 
+                        var sensor_type = parseData[11];
+                        console.log("sensor_type = (" + sensor_type + ")"  );
+
                         var serial_id_found = false;
                         var senser_number = 0;
 
@@ -212,7 +221,7 @@ var jsonErrorCode = require(conf.filePathToErrorCode);
                             }
                         }
 
-                        if(serial_id_found){
+                      if(serial_id_found){
                             debugConsoleLog('found the sensor(' + serial_id + ') in the children as senser_number = ' + (senser_number+1) );
                             /////////////////////////////////////////////////
                             // update the sensor node                      //
@@ -220,17 +229,26 @@ var jsonErrorCode = require(conf.filePathToErrorCode);
 
                             var sensorValues = jsonDevices.children[senser_number];
 
-                            //　センサーのデジタル信号は負論理
-                            //var intDigitalValue = (data.slice(33,35)&0x01)==1 ? 0 : 1 ;
-                            var intDigitalValue = ( parseData[12]&0x01)==1 ? 0 : 1 ;
-                            // -> when with the samp mopnitor
+                            var digitalInValue = '0';
+                            var strDigitalInValue = "0000"
+                            var intDigitalValue = 0;
 
-                            var digitalInValue = (intDigitalValue==1)? '1': '0';
-
-                            //debugConsoleLog('sensor current digital_in = ' + sensorValues.digital_in);
-//                               debugConsoleLog('data.slice(33,35) = ' + data.slice(33,35));
-                            //debugConsoleLog('digitalInValue = ' + digitalInValue);
-//                                debugConsoleLog('intDigitalValue = ' + intDigitalValue);
+                            if(sensor_type=="P"){ // for Tag app
+                                console.log("Tag sensor " );
+                                //　センサーのデジタル信号は負論理
+                                //var intDigitalValue = (data.slice(33,35)&0x01)==1 ? 0 : 1 ;
+                                intDigitalValue = ( parseData[12]&0x01)==1 ? 0 : 1 ;
+                                // -> when with the samp mopnitor
+                                digitalInValue = (intDigitalValue==1)? '1': '0';
+                                strDigitalInValue = parseData[12];
+                            }else if(sensor_type=="S"){  //for Analog sensor
+                                var analogValue = parseData[7];
+                                intDigitalValue = (analogValue > LEADSWITH_THRESHOLD_VOLTAGE)? 0: 1;
+                                digitalInValue =  (intDigitalValue==1)? '1': '0';
+                                strDigitalInValue = (analogValue > LEADSWITH_THRESHOLD_VOLTAGE)? LEADSWITH_IN_USE: LEADSWITH_VACANCY;
+                                console.log("Analog sensor  digitalIn = " + digitalInValue );
+                                console.log("               strdigitalIn = " + strDigitalInValue );
+                            }
 
                             //check the current digital_in value
                             if(sensorValues!=undefined){
@@ -250,14 +268,16 @@ var jsonErrorCode = require(conf.filePathToErrorCode);
                                     //if( (+formatted > ( parseInt(sensorValues.previous_settime, 10)+holdingTime*100)) && (digitalInValue == 1) ){
                                     if( digitalInValue == 1 ){
 
-                                        if (+formatted > ( parseInt(sensorValues.previous_settime, 10)+holdingTime*100)){
+                                        if (+formatted > ( parseInt(sensorValues.previous_settime, 10)+holdingTime*100)
+                                           ||(sensor_type=="S")
+                                           ){
                                             //////////////////////
                                             // update DB        //
                                             //////////////////////
 
-                                            console.log('================== FRAG UP SENSOR' + senser_number);
+                                            console.log('================== FRAG UP SENSOR ' + senser_number);
 
-                                            debugConsoleLog( serial_id + ': XXX digital_in = changed to' + digitalInValue);
+                                            debugConsoleLog( serial_id + ': XXX digital_in = changed to ' + digitalInValue);
                                             sensorValues['digital_in'] = digitalInValue;
 
                                             //change GPIO state
@@ -289,7 +309,22 @@ var jsonErrorCode = require(conf.filePathToErrorCode);
                                         }
 
                                         }else{
-                                            //debugConsoleLog('NO CHANGED');
+                                            if(sensor_type=="S"){
+                                                console.log('================== FRAG DOWN sensor ' + senser_number);
+
+                                                sensorValues.digital_in = 0;
+                                                if(GPIO_ON){
+                                                    if(myDigitalPins.length>senser_number ){
+                                                        myDigitalPins[senser_number].write(0);
+                                                    }
+                                                }
+                                                //send state change to the server
+                                                pushDataToServer(jsonDevices, senser_number) ;
+                                                if(!jsonDevices.children[senser_number].upload_status)
+                                                    sensorApiErrorRecoveryProcessActivity(jsonDevices, senser_number);
+                                                //previousSetTime[sensorNum]=0;
+                                                sensorValues.previous_settime="0";
+                                            }
                                         }
                                     }else{
                                     //////////////////////
@@ -309,7 +344,9 @@ var jsonErrorCode = require(conf.filePathToErrorCode);
                                     }
                                     //send state change to the server
                                     pushDataToServer(jsonDevices, senser_number);
+
                                     }
+
 //                                }else{
 //                                    console.log('digitalInValue is not changed , now ' + digitalInValue);
 //                                }
@@ -343,6 +380,25 @@ var jsonErrorCode = require(conf.filePathToErrorCode);
 //                            jsonDevices.children.push(serial_id.toString('ascii'));
 //                            jsonDevices.sensor_value.push(data.slice(33,35).toString('ascii'));
 
+                            var digitalInValue = 0;
+                            var intDigitalValue = 0;
+                            var strDigitalInValue = "0000"
+
+                            if(sensor_type="P"){ // for Tag app
+                                console.log("Tag sensor " );
+                                //　センサーのデジタル信号は負論理
+                                //var intDigitalValue = (data.slice(33,35)&0x01)==1 ? 0 : 1 ;
+                                intDigitalValue = ( parseData[12]&0x01)==1 ? 0 : 1 ;
+                                // -> when with the samp mopnitor
+                                digitalInValue = (intDigitalValue==1)? '1': '0';
+                                strDigitalInValue = parseData[12];
+                            }else if(sensor_type="S"){  //for Analog sensor
+                                console.log("Analog sensor " );
+                                var analogValue = parseData[7];
+                                digitalInValue = (analogValue > LEADSWITH_THRESHOLD_VOLTAGE)? '1': '0';
+                                strDigitalInValue = (analogValue > LEADSWITH_THRESHOLD_VOLTAGE)? "0001": "0000";
+                            }
+
                             /////////////////////////////////////////////////
                             // create the sensor node into the sensnrs.json  //
                             /////////////////////////////////////////////////
@@ -360,8 +416,9 @@ var jsonErrorCode = require(conf.filePathToErrorCode);
                                 counter: parseData[4],
                                 serial_id: parseData[5],
                                 battery_voltage: parseData[6],
-                                digital_in: parseData[12],
+                                digital_in: strDigitalInValue,
                                 previous_settime: "0",
+                                sensor_type : parseData[11],
                             };
 
 //                            jsonChild["timestamp"] = parseData[1];
@@ -689,7 +746,10 @@ function periodicActivity() {
         debugConsoleLog('================== periodic : sensor ' + sensorNum + ' current ' + formatted + ' : timeout ' + (parseInt(sensorValues.previous_settime, 10)+holdingTime*100) ) ;
 
 
-        if( (+formatted > ( parseInt(sensorValues.previous_settime, 10)+holdingTime*100)) && (sensorValues.digital_in == 1 ) ){
+        if( (+formatted > ( parseInt(sensorValues.previous_settime, 10)+holdingTime*100))
+           && (sensorValues.digital_in == 1 )
+           && (sensorValues.sensor_type == "P" )
+          ){
 //        if( (+formatted > (+previousSetTime[sensorNum]+holdingTime*100)) && (sensorValues.digital_in == 1 ) ){
             console.log('================== FRAG DOWN ' + sensorNum );
 

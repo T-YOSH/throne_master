@@ -8,5 +8,6 @@
     "health" :"available",
     "previous_settime" : "0",
     "upload_state" : false,
-    "status" : false
+    "status" : false,
+    "sensor_type" : false
 }
